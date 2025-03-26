@@ -14,7 +14,7 @@ fi
 # Discard stdin. Needed when running from a one-liner which includes a newline
 read -N 999999 -t 0.001
 
-# Detect OS (with some variables kept for convenience)
+# Detect OS
 if grep -qs "ubuntu" /etc/os-release; then
     os="ubuntu"
     os_version=$(grep 'VERSION_ID' /etc/os-release | cut -d '"' -f 2 | tr -d '.')
@@ -62,7 +62,6 @@ This version of $os_name is too old and unsupported."
     exit
 fi
 
-# Detect environments where $PATH does not include the sbin directories
 if ! grep -q sbin <<< "$PATH"; then
     echo '$PATH does not include sbin. Try using "su -" instead of "su".'
     exit
@@ -79,30 +78,27 @@ TUN needs to be enabled before running this installer."
     exit
 fi
 
-# Store the absolute path of the directory where the script is located
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 new_client () {
-    # Generates the custom client.ovpn
     {
-      cat /etc/openvpn/server/client-common.txt
-      echo "<ca>"
-      cat /etc/openvpn/server/easy-rsa/pki/ca.crt
-      echo "</ca>"
-      echo "<cert>"
-      sed -ne '/BEGIN CERTIFICATE/,$ p' /etc/openvpn/server/easy-rsa/pki/issued/"$client".crt
-      echo "</cert>"
-      echo "<key>"
-      cat /etc/openvpn/server/easy-rsa/pki/private/"$client".key
-      echo "</key>"
-      echo "<tls-crypt>"
-      sed -ne '/BEGIN OpenVPN Static key/,$ p' /etc/openvpn/server/tc.key
-      echo "</tls-crypt>"
+        cat /etc/openvpn/server/client-common.txt
+        echo "<ca>"
+        cat /etc/openvpn/server/easy-rsa/pki/ca.crt
+        echo "</ca>"
+        echo "<cert>"
+        sed -ne '/BEGIN CERTIFICATE/,$ p' /etc/openvpn/server/easy-rsa/pki/issued/"$client".crt
+        echo "</cert>"
+        echo "<key>"
+        cat /etc/openvpn/server/easy-rsa/pki/private/"$client".key
+        echo "</key>"
+        echo "<tls-crypt>"
+        sed -ne '/BEGIN OpenVPN Static key/,$ p' /etc/openvpn/server/tc.key
+        echo "</tls-crypt>"
     } > "$script_dir"/"$client".ovpn
 }
 
 if [[ ! -e /etc/openvpn/server/server.conf ]]; then
-    # Detect minimal setups where neither wget nor curl are installed
     if ! hash wget 2>/dev/null && ! hash curl 2>/dev/null; then
         echo "Wget is required to use this installer."
         read -n1 -r -p "Press any key to install Wget and continue..."
@@ -111,7 +107,6 @@ if [[ ! -e /etc/openvpn/server/server.conf ]]; then
     fi
     clear
     echo 'Welcome to this OpenVPN road warrior installer!'
-    # Choose IPv4 address (if only one exists, it is selected automatically)
     if [[ $(ip -4 addr | grep inet | grep -vEc '127(\.[0-9]{1,3}){3}') -eq 1 ]]; then
         ip=$(ip -4 addr | grep inet | grep -vE '127(\.[0-9]{1,3}){3}' | cut -d '/' -f 1 | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}')
     else
@@ -127,7 +122,6 @@ if [[ ! -e /etc/openvpn/server/server.conf ]]; then
         [[ -z "$ip_number" ]] && ip_number="1"
         ip=$(ip -4 addr | grep inet | grep -vE '127(\.[0-9]{1,3}){3}' | cut -d '/' -f 1 | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' | sed -n "$ip_number"p)
     fi
-    # If $ip is private, ask for public IP or hostname
     if echo "$ip" | grep -qE '^(10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.|192\.168)'; then
         echo
         echo "This server is behind NAT. What is the public IPv4 address or hostname?"
@@ -139,7 +133,6 @@ if [[ ! -e /etc/openvpn/server/server.conf ]]; then
         done
         [[ -z "$public_ip" ]] && public_ip="$get_public_ip"
     fi
-    # Determine IPv6 address if available
     if [[ $(ip -6 addr | grep -c 'inet6 [23]') -eq 1 ]]; then
         ip6=$(ip -6 addr | grep 'inet6 [23]' | cut -d '/' -f 1 | grep -oE '([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}')
     fi
@@ -223,7 +216,6 @@ if [[ ! -e /etc/openvpn/server/server.conf ]]; then
     echo
     echo "OpenVPN installation is ready to begin."
     
-    # Install firewall package if necessary
     if ! systemctl is-active --quiet firewalld.service && ! hash iptables 2>/dev/null; then
         if [[ "$os" == "centos" || "$os" == "fedora" ]]; then
             firewall="firewalld"
@@ -234,14 +226,12 @@ if [[ ! -e /etc/openvpn/server/server.conf ]]; then
     fi
     read -n1 -r -p "Press any key to continue..."
     
-    # If running inside a container, disable LimitNPROC to prevent conflicts
     if systemd-detect-virt -cq; then
         mkdir /etc/systemd/system/openvpn-server@server.service.d/ 2>/dev/null
         echo "[Service]
 LimitNPROC=infinity" > /etc/systemd/system/openvpn-server@server.service.d/disable-limitnproc.conf
     fi
     
-    # Install OpenVPN and prerequisites
     if [[ "$os" = "debian" || "$os" = "ubuntu" ]]; then
         apt-get update
         apt-get install -y --no-install-recommends openvpn openssl ca-certificates $firewall
@@ -256,29 +246,26 @@ LimitNPROC=infinity" > /etc/systemd/system/openvpn-server@server.service.d/disab
         systemctl enable --now firewalld.service
     fi
     
-    # Get EasyRSA: Create the directory and extract EasyRSA files
+    # Get EasyRSA: Create directory and extract files
     easy_rsa_url='https://github.com/OpenVPN/easy-rsa/releases/download/v3.2.2/EasyRSA-3.2.2.tgz'
     mkdir -p /etc/openvpn/server/easy-rsa/
     { wget -qO- "$easy_rsa_url" 2>/dev/null || curl -sL "$easy_rsa_url" ; } | tar xz -C /etc/openvpn/server/easy-rsa/ --strip-components=1
     chown -R root:root /etc/openvpn/server/easy-rsa/
     cd /etc/openvpn/server/easy-rsa/
     
-    # Create the PKI, set up the CA, and generate server and client certificates
+    # Create the PKI, build CA, and generate certificates
     ./easyrsa --batch init-pki
     ./easyrsa --batch build-ca nopass
     ./easyrsa --batch --days=3650 build-server-full server nopass
     ./easyrsa --batch --days=3650 build-client-full "$client" nopass
     ./easyrsa --batch --days=3650 gen-crl
     
-    # Move necessary files to /etc/openvpn/server
     cp pki/ca.crt pki/private/ca.key pki/issued/server.crt pki/private/server.key pki/crl.pem /etc/openvpn/server
     chown nobody:"$group_name" /etc/openvpn/server/crl.pem
     chmod o+x /etc/openvpn/server/
     
-    # Generate key for tls-crypt
     openvpn --genkey secret /etc/openvpn/server/tc.key
     
-    # Create the DH parameters file using ffdhe2048
     echo '-----BEGIN DH PARAMETERS-----
 MIIBCAKCAQEA//////////+t+FRYortKmq/cViAnPTzx2LnFg84tNpWp4TZBFGQz
 +8yTnc4kmz75fS/jY2MMddj2gbICrsRhetPfHtXV/WVhJDP1H18GbtCFY2VVPe0a
@@ -308,7 +295,6 @@ server 10.8.0.0 255.255.255.0" > /etc/openvpn/server/server.conf
         echo 'push "redirect-gateway def1 ipv6 bypass-dhcp"' >> /etc/openvpn/server/server.conf
     fi
     echo 'ifconfig-pool-persist ipp.txt' >> /etc/openvpn/server/server.conf
-    # DNS configuration
     case "$dns" in
         1|"")
             if grep '^nameserver' "/etc/resolv.conf" | grep -qv '127.0.0.53' ; then
@@ -388,7 +374,7 @@ crl-verify crl.pem" >> /etc/openvpn/server/server.conf
         echo "Allowed subnets: $allowed_subnets"
         custom_rules=""
         for subnet in $allowed_subnets; do
-            custom_rules="${custom_rules}\nExecStart=${iptables_path} -w 5 -A VPN_FILTER -d ${subnet} -j ACCEPT"
+            custom_rules="${custom_rules}"$'\n'"ExecStart=${iptables_path} -w 5 -A VPN_FILTER -d ${subnet} -j ACCEPT"
         done
         cat <<EOF > /etc/systemd/system/openvpn-iptables.service
 [Unit]
@@ -402,7 +388,7 @@ ExecStart=${iptables_path} -w 5 -t nat -A POSTROUTING -s 10.8.0.0/24 ! -d 10.8.0
 ExecStart=${iptables_path} -w 5 -I INPUT -p ${protocol} --dport ${port} -j ACCEPT
 ExecStart=${iptables_path} -w 5 -I FORWARD -s 10.8.0.0/24 -j ACCEPT
 ExecStart=${iptables_path} -w 5 -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
-ExecStart=-${iptables_path} -w 5 -N VPN_FILTER
+ExecStart=${iptables_path} -w 5 -N VPN_FILTER
 ExecStart=${iptables_path} -w 5 -A VPN_FILTER -m state --state RELATED,ESTABLISHED -j ACCEPT
 ExecStart=${iptables_path} -w 5 -A VPN_FILTER -p tcp -m multiport --dports 22,80,443,8000,9000,8001,8002 -j ACCEPT
 ExecStart=${iptables_path} -w 5 -A VPN_FILTER -p udp --dport 1195 -j ACCEPT
@@ -432,14 +418,14 @@ WantedBy=multi-user.target
 EOF
         systemctl enable --now openvpn-iptables.service
     fi
-
+    
     if sestatus 2>/dev/null | grep "Current mode" | grep -q "enforcing" && [[ "$port" != 1194 ]]; then
         if ! hash semanage 2>/dev/null; then
             dnf install -y policycoreutils-python-utils
         fi
         semanage port -a -t openvpn_port_t -p "$protocol" "$port"
     fi
-
+    
     [[ -n "$public_ip" ]] && ip="$public_ip"
     echo "client
 dev tun
